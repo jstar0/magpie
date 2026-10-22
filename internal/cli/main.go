@@ -103,6 +103,7 @@ const usage = `magpie — one place to pick every agent's model
   magpie accounts switch-only codex [on|off]   only switch Codex's own sign-in to an account with room; its requests go straight to OpenAI, never through magpie
   magpie accounts run claude <account> [--cwd <dir>] [-- <claude arguments>…]   Claude Code on a saved Claude account, beside your own Claude Code: in that account's folder in magpie, the one its Claude subscription runs in
   magpie claude-code [install [--yes]|remove]   the Claude Code a Claude subscription runs; install downloads Anthropic's own build, checked against its manifest, for a server or container without one
+  magpie claude-desktop run|list|rm [<name>]   Claude Desktop with a folder of its own per name, beside your usual one, signed in there (macOS; magpie claude-desktop --help)
   magpie plugin [add <package>|rm|update|on|off|login <provider>|logout <provider>]
                                   OpenCode provider plugins and pi packages: subscriptions signed in to, and served, through a plugin
   magpie plugin move|migrate <subscription>   run a built-in subscription's accounts on its community plugin
@@ -423,6 +424,11 @@ func run(args []string) error {
 		return claudebridge.RunMCP(args[1:])
 	}
 
+	// Claude Desktop started with a folder of its own (#991); any other word
+	// after claude-desktop is its provider or a field, as before
+	if desktopInstanceCmd(args) {
+		return claudeDesktopCmd(args[1:])
+	}
 	a, err := agent.Find(args[0])
 	if err != nil {
 		return err
