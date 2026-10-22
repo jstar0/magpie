@@ -395,6 +395,15 @@ func codexIn(at place) *Agent {
 		s := settings.Load()
 		return codexAsyncSync(path, at.key("codex.async"), routed, s.CodexAsyncCompact, s.CodexAsyncCompactPercent)
 	}
+	// login is the sign-in field's value, kept in the stash
+	login := func() string { return stashLoad()[at.key("codex.login")] }
+	// keepSignIn: magpie API with Codex's ChatGPT sign-in kept (#994), its
+	// provider table requiring OpenAI auth; magpie's key still goes with
+	// every request (codex_keepsignin.go)
+	keepSignIn := func() bool { return login() == codexAPIKeepSignIn }
+	// openAIAuth puts magpie's provider table's requires_openai_auth as
+	// keepSignIn has it; one the user wrote stays
+	openAIAuth := func() error { return codexOpenAIAuthSync(path, at.key("codex.openai_auth"), keepSignIn()) }
 	// keptBearerToken is the table's bearer token when it is one the
 	// gateway takes: a caller key of the gateway's own the user put in
 	// magpie's token's place goes through magpie all the same, so theirs
@@ -424,6 +433,8 @@ func codexIn(at place) *Agent {
 			// model is never given the tool, so a Codex on magpie can't draw
 			// (the request that names model/draws never happens at all).
 			// uses_openai_actor_authorization() is exactly this check.
+			// Signed in to ChatGPT, Codex 0.163 offers it to a provider
+			// requiring OpenAI auth too (keepSignIn, codex_keepsignin.go).
 			// An Inline table: a config that holds the headers as their own
 			// [model_providers.magpie.http_headers] table, or as dotted keys,
 			// gets the header set there, the user's others kept; written
@@ -436,7 +447,15 @@ func codexIn(at place) *Agent {
 		if caps := codexProviderCaps(path); caps != nil {
 			kvs = append(kvs, edit.KV{Path: "capabilities", Value: caps})
 		}
+		// nor its requires_openai_auth, the user's or the sign-in field's
+		// (keepSignIn), which openAIAuth then puts as the field has it
+		if t, _ := edit.GetTOMLTable(path, "model_providers."+magpieID); t["requires_openai_auth"] == "true" || t["requires_openai_auth"] == "false" {
+			kvs = append(kvs, edit.KV{Path: "requires_openai_auth", Value: t["requires_openai_auth"] == "true"})
+		}
 		if err := edit.SetTOMLTable(path, "model_providers."+magpieID, kvs...); err != nil {
+			return err
+		}
+		if err := openAIAuth(); err != nil {
 			return err
 		}
 		return asyncCompaction(true)
@@ -684,14 +703,14 @@ func codexIn(at place) *Agent {
 		return nil
 	}
 	// api: the user wants magpie as Codex's provider even while Codex is
-	// signed in to ChatGPT
-	api := func() bool { return stashLoad()[at.key("codex.login")] == "api" }
+	// signed in to ChatGPT, with that sign-in kept or not (keepSignIn)
+	api := func() bool { return codexAPILogin(login()) }
 	// out reports whether the Codex app holds the ChatGPT account Codex is
 	// signed in to (codexUsedUp), for magpie to become Codex's provider
 	// while it does (#540): never with the sign-in kept on ChatGPT
 	// (chatgpt), where the user would rather the Codex app wait for the
 	// account than leave its ChatGPT state
-	out := func() bool { return stashLoad()[at.key("codex.login")] != "chatgpt" && codexUsedUp() }
+	out := func() bool { return login() != "chatgpt" && codexUsedUp() }
 	dropBase := func() error {
 		forget(at.key("codex.failover"))
 		if !viaBase() {
@@ -1307,6 +1326,9 @@ func codexIn(at place) *Agent {
 				if t["base_url"] != at.v1() || !keyHolds(t["experimental_bearer_token"], at.gwKey()) || t["wire_api"] != "responses" {
 					return "Codex's [model_providers.magpie] no longer points at magpie's gateway (" + at.v1() + ")"
 				}
+				if keepSignIn() && t["requires_openai_auth"] != "true" {
+					return "Codex's [model_providers.magpie] no longer has requires_openai_auth = true, so Codex isn't on its ChatGPT sign-in, which magpie API + ChatGPT sign-in keeps"
+				}
 				if c := get("model_catalog_json"); !ownCatalog(c) {
 					return "Codex's model_catalog_json is no longer magpie's list"
 				}
@@ -1492,26 +1514,34 @@ func codexIn(at place) *Agent {
 				// sign-in (openai_base_url), magpie its provider only while
 				// the Codex app holds the account (""); beside it always,
 				// held or not (chatgpt); or with magpie as its provider,
-				// the Codex app in its API state. Codex's getAuthStatus has
-				// no token for a provider without requires_openai_auth, so
-				// its Chrome control needs ChatGPT; the api note says so
-				// (#1824). Kept in the stash, where set("") leaves it.
+				// the Codex app in its API state (api), or on its ChatGPT
+				// sign-in still (api-chatgpt, keepSignIn: #994). Codex's
+				// getAuthStatus has no token for a provider without
+				// requires_openai_auth, so its Chrome control needs
+				// ChatGPT; the api note says so (#1824). Kept in the
+				// stash, where set("") leaves it.
 				Key: "login", Label: "sign-in", Quiet: true,
-				Get: func() string { return stashLoad()[at.key("codex.login")] },
+				Get: login,
 				Set: func(v string) error {
-					if v != "" && v != "api" && v != "chatgpt" {
-						return fmt.Errorf("sign-in is api, chatgpt or empty (ChatGPT), not %q", v)
+					if v != "" && v != "chatgpt" && !codexAPILogin(v) {
+						return fmt.Errorf("sign-in is api, %s, chatgpt or empty (ChatGPT), not %q", codexAPIKeepSignIn, v)
 					}
 					stash(map[string]string{at.key("codex.login"): v})
+					// the table, written or kept for the threads started
+					// on magpie, takes the change whether or not magpie is
+					// Codex's provider now
+					if err := openAIAuth(); err != nil {
+						return err
+					}
 					m := get("model")
 					switch {
-					case v != "api" && codexOwnOf(m) != "":
+					case !codexAPILogin(v) && codexOwnOf(m) != "":
 						// back beside the sign-in, Codex's own model goes to
 						// OpenAI itself again, not by a hop through magpie
 						return set(codexOwnOf(m))
 					case isMagpie(m):
 						return set(m)
-					case v == "api" && codexOwnViaMagpie(m) != "":
+					case codexAPILogin(v) && codexOwnViaMagpie(m) != "":
 						// magpie API on one of Codex's own models: wired as
 						// for magpie's, so its models are in Codex's picker
 						return set(m)
@@ -1523,6 +1553,7 @@ func codexIn(at place) *Agent {
 						{Value: "", Label: "ChatGPT", Note: "magpie's models join Codex's own; Codex stays signed in to ChatGPT, and while the Codex app blocks its account (out of allowance, no credits left) magpie is Codex's provider, so the app still sends"},
 						{Value: "chatgpt", Label: "Always ChatGPT", Note: "as ChatGPT, and kept so while the Codex app blocks its account: magpie never becomes Codex's provider. The Codex app may then send nothing till the account has room; Codex CLI goes on through magpie"},
 						{Value: "api", Label: "magpie API", Note: "magpie is Codex's provider; the Codex app is in its API state, with magpie's models only. Codex's Chrome control needs the ChatGPT sign-in, so pick ChatGPT to keep it"},
+						{Value: codexAPIKeepSignIn, Label: "magpie API + ChatGPT sign-in", Note: codexKeepSignInNote},
 					}
 				},
 			},
