@@ -76,6 +76,10 @@ func helpFor(args []string) string {
 	case "app", "gui":
 		cmd = ""
 	}
+	// Claude Desktop is an agent with instances of its own (#991)
+	if a, err := agent.Find(cmd); err == nil && cmd != "" && a.ID == "claude-desktop" {
+		return agentHelp(a) + "\n" + claudeDesktopUsage + "\n"
+	}
 	if cmd != "" && !strings.HasPrefix(cmd, "-") {
 		if lines := usageLines(cmd); lines != "" {
 			return lines
