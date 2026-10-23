@@ -56,6 +56,9 @@ type place struct {
 	// version is the agent's CLI's there, as the probe found it; "" when
 	// not known (one on this machine is asked itself)
 	version string
+	// dir, when set, is the agent's config folder itself, whatever its
+	// variables say: an instance's, a folder the user named (instance.go)
+	dir string
 }
 
 func here(home string) place { return place{home: home} }
@@ -69,20 +72,26 @@ func (p place) getenv(k string) string {
 	return appdir.Getenv(k)
 }
 
-// codexHome is Codex's folder at the place: $CODEX_HOME on this machine
-// (appdir.CodexHome), ~/.codex in a distro, whose variables magpie can't
-// read.
+// codexHome is Codex's folder at the place: an instance's own (dir), else
+// $CODEX_HOME on this machine (appdir.CodexHome), ~/.codex in a distro,
+// whose variables magpie can't read.
 func (p place) codexHome() string {
+	if p.dir != "" {
+		return p.dir
+	}
 	if p.spell != nil {
 		return filepath.Join(p.home, ".codex")
 	}
 	return appdir.CodexHomeIn(p.home)
 }
 
-// claudeDir is Claude Code's folder at the place: $CLAUDE_CONFIG_DIR on
-// this machine (appdir.ClaudeDir), ~/.claude in a distro, whose variables
-// magpie can't read.
+// claudeDir is Claude Code's folder at the place: an instance's own (dir),
+// else $CLAUDE_CONFIG_DIR on this machine (appdir.ClaudeDir), ~/.claude in
+// a distro, whose variables magpie can't read.
 func (p place) claudeDir() string {
+	if p.dir != "" {
+		return p.dir
+	}
 	if p.spell != nil {
 		return filepath.Join(p.home, ".claude")
 	}
@@ -624,7 +633,8 @@ func wslKept(d distro) bool { return wslFound(d) || d.Has["dir:"+wslCopilotDir] 
 func (a *Agent) ListsFor() string {
 	id, _, _ := strings.Cut(a.ID, "@wsl:")
 	// a named omp profile (omp#work) shares omp's lists: it is another
-	// omp, not another agent with a catalog of its own
+	// omp, not another agent with a catalog of its own. So does an
+	// instance in a folder of the user's (codex#<folder's hash>)
 	id, _, _ = strings.Cut(id, "#")
 	return id
 }

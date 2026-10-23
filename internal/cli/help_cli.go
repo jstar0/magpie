@@ -20,8 +20,8 @@ func helpAsked(args []string) bool {
 	// Agents page's dry run, a link, Windows' -Embedding) never carries
 	// an exact -h, --help or help
 	for _, a := range args {
-		if a == "--" && accountsRun(args) {
-			break // what follows is Claude Code's own (accountsRunCmd)
+		if a == "--" && (accountsRun(args) || args[0] == "run") {
+			break // what follows is the agent's own (accountsRunCmd, runCmd)
 		}
 		if a == "-h" || a == "--help" {
 			return true

@@ -64,7 +64,7 @@ func RunClaudeAccount(user string, r ClaudeRun) error {
 	}
 	return inSavedClaudeDir(user, func(dir string) error {
 		// through the account's own proxy, as the gateway's runs on it go
-		env, err := cli.proxied(ProxyOfLogin("claude", user), claudeRunEnv(os.Environ(), dir))
+		env, err := cli.proxied(ProxyOfLogin("claude", user), ClaudeRunEnv(os.Environ(), dir))
 		if err != nil {
 			return err
 		}
@@ -91,10 +91,11 @@ func claudeOwnRunError(user string) error {
 	return fmt.Errorf("%s is the account Claude Code itself is signed in to: run `claude` for it. magpie accounts run claude starts Claude Code on your other saved accounts", user)
 }
 
-// claudeRunEnv is env for Claude Code run by the user on a saved account
-// in config directory dir: none of what would point it at another
-// endpoint, token, directory or a Claude Code it runs inside.
-func claudeRunEnv(env []string, dir string) []string {
+// ClaudeRunEnv is env for Claude Code run by the user in config directory
+// dir, on a saved account or in a folder of their own (`magpie run`,
+// agent.Instance): none of what would point it at another endpoint,
+// token, directory or a Claude Code it runs inside.
+func ClaudeRunEnv(env []string, dir string) []string {
 	out := make([]string, 0, len(env)+1)
 	for _, kv := range withoutClaudeWiring(env) {
 		switch k, _, _ := strings.Cut(kv, "="); k {

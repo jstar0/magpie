@@ -55,6 +55,9 @@ const usage = `magpie — one place to pick every agent's model
   magpie <agent> <field> <value>  set another field   e.g. magpie codex effort high
   magpie <agent> default          take magpie out: the agent back on what it had before
   magpie <agent> <field> default  that field back to the agent's own default
+  magpie run <claude|codex> --home <folder> [<model>] [--cwd <folder>] [-- <the agent's arguments>…]
+                                  Claude Code or Codex with a folder of your choosing as its settings folder, on magpie's model or group there,
+                                  beside the one you run as itself, never written; several folders can run side by side. The folder keeps the wiring
   magpie <command> --help         what a command or an agent takes; -h or --help anywhere does nothing else
 
   magpie save <name>              snapshot every agent's settings as a profile
@@ -414,6 +417,8 @@ func run(args []string) error {
 		return imagemcp.Run(args[1:])
 	case "claude-code":
 		return claudeCodeCmd(args[1:])
+	case "run":
+		return runCmd(args[1:])
 	case "claude-mcp-helper": // internal: stdio MCP subprocess spawned by Claude Code
 		return claudebridge.RunMCP(args[1:])
 	}
