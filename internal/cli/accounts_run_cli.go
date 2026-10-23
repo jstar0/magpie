@@ -1,13 +1,10 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
-	"syscall"
 
 	"github.com/yetone/magpie/internal/provider"
 )
@@ -73,18 +70,6 @@ func accountsRunCmd(args []string) error {
 	// it to end, and reads its sign-in back then
 	interrupts.Add(1)
 	defer interrupts.Add(-1)
-	err = provider.RunClaudeAccount(user, provider.ClaudeRun{Args: pass, Dir: cwd, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr})
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		code := exit.ExitCode()
-		if ws, ok := exit.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-			code = 128 + int(ws.Signal())
-		}
-		if code <= 0 {
-			code = 1
-		}
-		// Claude Code has said why itself
-		return exitError{code: code}
-	}
-	return err
+	// Claude Code says why it ended itself
+	return ranExit(provider.RunClaudeAccount(user, provider.ClaudeRun{Args: pass, Dir: cwd, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}))
 }
